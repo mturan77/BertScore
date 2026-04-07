@@ -57,7 +57,7 @@ c_btn1, c_btn2, c_btn3 = st.columns([1, 1, 4])
 # --- NLP ANALİZ MANTIĞI ---
 if c_btn1.button("🚀 NLP Analizi"):
     if ai_text and ref_text:
-        with st.spinner("NLP Hesaplanıyor..."):
+        with st.spinner("NLP Metrikleri Hesaplanıyor..."):
             ai_words = re.findall(r'\b\w+\b', ai_text, re.UNICODE)
             ref_words = re.findall(r'\b\w+\b', ref_text, re.UNICODE)
             ai_sentences = [s for s in re.split(r'[.!?]+', ai_text) if s.strip()]
@@ -74,14 +74,16 @@ if c_btn1.button("🚀 NLP Analizi"):
             raw_report += (", ".join(ai_spell_issues) + "\n\n") if ai_spell_issues else "Sorun yok.\n\n"
             raw_report += f"--- TEKNİK METRİKLER ---\nPrecision : {P.mean().item():.4f}\nRecall    : {R.mean().item():.4f}\nF1-Score  : {f1_val:.4f}\nCosine    : {cos_sim:.4f}"
             
-            comment = "Anlamsal uyum mükemmel." if f1_val > 0.90 else "Anlamsal farklılıklar var."
+            comment = "Anlamsal uyum mükemmel, metinler birbirine çok yakın." if f1_val > 0.88 else "Anlamsal olarak metinler arasında belirgin farklar mevcut."
             st.session_state.nlp_res = {"raw": raw_report, "f1": f1_val, "cos": cos_sim, "comment": comment}
 
 # --- OKUNABİLİRLİK MANTIĞI ---
 if c_btn2.button("📊 Okunabilirlik Analizi"):
     if ai_text and ref_text:
         r_ai, r_ref = calculate_readability(ai_text), calculate_readability(ref_text)
-        st.session_state.read_res = {"ai": r_ai, "ref": r_ref}
+        diff = abs(r_ai['at'] - r_ref['at'])
+        comment = "AI metni, referansın dil ağırlığına tam uyum sağlıyor." if diff < 10 else "AI metni referanstan farklı bir karmaşıklık düzeyinde."
+        st.session_state.read_res = {"ai": r_ai, "ref": r_ref, "comment": comment}
 
 if c_btn3.button("🗑️ Temizle"):
     st.session_state.nlp_res = st.session_state.read_res = None
@@ -100,7 +102,7 @@ with res_left:
         m_c1, m_c2 = st.columns(2)
         m_c1.metric("F1 (Başarı)", f"{n.get('f1'):.2%}")
         m_c2.metric("Anlam Benzerliği", f"{n.get('cos'):.2%}")
-        st.success(f"**💡 NLP Yorumu:** {n.get('comment')}")
+        st.success(f"**💡 NLP Analist Yorumu:** {n.get('comment')}")
     else:
         st.info("NLP analizi bekleniyor...")
 
@@ -111,7 +113,7 @@ with res_right:
         ai_d, ref_d = r.get("ai", {}), r.get("ref", {})
 
         # Ateşman Bölümü
-        st.markdown("**Ateşman İndeksi (Genel)**")
+        st.markdown("**Ateşman İndeksi (Genel Zorluk)**")
         m1, m2 = st.columns(2)
         l_ai, i_ai = get_atesman_info(ai_d.get("at"))
         l_ref, i_ref = get_atesman_info(ref_d.get("at"))
@@ -124,12 +126,14 @@ with res_right:
         cl_ai, ci_ai = get_cetinkaya_info(ai_d.get("cu"))
         cl_ref, ci_ref = get_cetinkaya_info(ref_d.get("cu"))
         m3.metric("AI Çetinkaya", f"{ai_d.get('cu')}", f"{cl_ai} {ci_ai}", delta_color="off")
-        m4.metric("Ref Çetinkaya", f"{ref_d.get('at')}", f"{cl_ref} {ci_ref}", delta_color="off")
+        m4.metric("Ref Çetinkaya", f"{ref_d.get('cu')}", f"{cl_ref} {ci_ref}", delta_color="off")
 
+        # Tablo ve Yorum
         st.table({
-            "Ölçüt": ["Ateşman", "Çetinkaya-Uzun", "Cümle/Kelime", "Hece/Kelime"],
-            "AI": [ai_d.get("at"), ai_d.get("cu"), ai_d.get("asw"), ai_d.get("aws")],
-            "Ref": [ref_d.get("at"), ref_d.get("cu"), ref_d.get("asw"), ref_d.get("aws")]
+            "Ölçüt": ["Ateşman Puanı", "Çetinkaya-Uzun", "Ort. Kelime Sayısı", "Ort. Hece Sayısı"],
+            "AI Metni": [ai_d.get("at"), ai_d.get("cu"), ai_d.get("asw"), ai_d.get("aws")],
+            "Referans": [ref_d.get("at"), ref_d.get("cu"), ref_d.get("asw"), ref_d.get("aws")]
         })
+        st.info(f"**💡 Okunabilirlik Yorumu:** {r.get('comment')}")
     else:
         st.info("Okunabilirlik analizi bekleniyor...")
