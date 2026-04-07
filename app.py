@@ -8,9 +8,11 @@ from sklearn.metrics.pairwise import cosine_similarity
 # Sayfa Ayarları
 st.set_page_config(page_title="Türkçe NLP & Okunabilirlik Dashboard", layout="wide")
 
-# --- Session State (Hafıza) ---
-if 'nlp_res' not in st.session_state: st.session_state.nlp_res = None
-if 'read_res' not in st.session_state: st.session_state.read_res = None
+# --- Session State Başlatma (Hata Önleyici) ---
+if 'nlp_res' not in st.session_state:
+    st.session_state.nlp_res = None
+if 'read_res' not in st.session_state:
+    st.session_state.read_res = None
 
 # --- Fonksiyonlar ---
 
@@ -63,7 +65,7 @@ if c_btn1.button("🚀 NLP Analizi"):
             
             f1_val = F1.mean().item()
             
-            # 1. HAM ÇIKTI (Senin İstediğin İlk Format)
+            # Teknik Ham Rapor
             raw_report = "--- TEMEL ÖZELLİKLER ---\n"
             raw_report += f"[AI Cümlesi]       Kelime: {len(ai_words)} | Cümle: {len(ai_sentences)}\n"
             raw_report += f"[Referans Cümle] Kelime: {len(ref_words)} | Cümle: {len(ref_sentences)}\n\n"
@@ -75,8 +77,8 @@ if c_btn1.button("🚀 NLP Analizi"):
             raw_report += f"BERTScore F1-Score  : {f1_val:.4f}\n"
             raw_report += f"Cosine Similarity   : {cos_sim:.4f}\n"
 
-            # 2. YORUM
-            if f1_val > 0.90: comment = "Mükemmel! Metinler anlamsal olarak neredeyse özdeş."
+            # Yorum
+            if f1_val > 0.90: comment = "Mükemmel! Metinler anlamsal olarak özdeş."
             elif f1_val > 0.75: comment = "Başarılı. AI, referansın ana fikrini korumuş."
             else: comment = "Zayıf. AI metni anlam kaybı yaşıyor veya çok farklı ifade edilmiş."
 
@@ -87,11 +89,12 @@ if c_btn2.button("📊 Okunabilirlik Analizi"):
     if ai_text and ref_text:
         r_ai, r_ref = calculate_readability(ai_text), calculate_readability(ref_text)
         diff = abs(r_ai['at'] - r_ref['at'])
-        comment = "AI metni, referansın dil ağırlığına tam uyum sağlıyor." if diff < 10 else "AI metni referanstan farklı bir seviyede (daha basit veya daha ağır)."
+        comment = "AI metni, referansın dil ağırlığına tam uyum sağlıyor." if diff < 10 else "AI metni referanstan farklı bir seviyede."
         st.session_state.read_res = {"ai": r_ai, "ref": r_ref, "comment": comment}
 
 if c_btn3.button("🗑️ Temizle"):
-    st.session_state.nlp_res = st.session_state.read_res = None
+    st.session_state.nlp_res = None
+    st.session_state.read_res = None
     st.rerun()
 
 st.divider()
@@ -101,38 +104,38 @@ res_left, res_right = st.columns(2)
 
 with res_left:
     st.subheader("🛠️ NLP Analiz Raporu")
-    if st.session_state.nlp_res:
+    # Hata korumalı kontrol: nlp_res hem var olmalı hem de sözlük olmalı
+    if st.session_state.nlp_res and isinstance(st.session_state.nlp_res, dict):
         n = st.session_state.nlp_res
-        # Ham çıktı en başta (Senin istediğin gibi)
-        st.code(n['raw'], language="text")
+        st.code(n.get('raw', 'Veri alınamadı'), language="text")
         
-        # Görsel Özet (Ekstra görselleştirme)
         st.write("**NLP Başarı Özeti:**")
         m_col1, m_col2 = st.columns(2)
-        m_col1.metric("Genel Başarı (F1)", f"{n['f1']:.2%}")
-        m_col2.metric("Anlam Benzerliği", f"{n['cos']:.2%}")
-        st.success(f"**💡 NLP Yorumu:** {n['comment']}")
+        m_col1.metric("Genel Başarı (F1)", f"{n.get('f1', 0):.2%}")
+        m_col2.metric("Anlam Benzerliği", f"{n.get('cos', 0):.2%}")
+        st.success(f"**💡 NLP Yorumu:** {n.get('comment', '')}")
     else:
         st.info("NLP analizi bekleniyor...")
 
 with res_right:
     st.subheader("📈 Okunabilirlik Dashboard")
-    if st.session_state.read_res:
+    if st.session_state.read_res and isinstance(st.session_state.read_res, dict):
         r = st.session_state.read_res
-        ai_at, ref_at = r['ai']['at'], r['ref']['at']
+        ai_data = r.get("ai", {})
+        ref_data = r.get("ref", {})
         
         m1, m2 = st.columns(2)
-        l_ai, i_ai = get_atesman_info(ai_at)
-        l_ref, i_ref = get_atesman_info(ref_at)
+        l_ai, i_ai = get_atesman_info(ai_data.get("at"))
+        l_ref, i_ref = get_atesman_info(ref_data.get("at"))
         
-        m1.metric("AI Ateşman", f"{ai_at}", f"{l_ai} {i_ai}", delta_color="off")
-        m2.metric("Ref Ateşman", f"{ref_at}", f"{l_ref} {i_ref}", delta_color="off")
+        m1.metric("AI Ateşman", f"{ai_data.get('at')}", f"{l_ai} {i_ai}", delta_color="off")
+        m2.metric("Ref Ateşman", f"{ref_data.get('at')}", f"{l_ref} {i_ref}", delta_color="off")
         
         st.table({
             "Ölçüt": ["Ateşman Puanı", "Çetinkaya-Uzun", "Ort. Cümle", "Ort. Hece"],
-            "AI Metni": [ai_at, r['ai']['cu'], r['ai']['asw'], r['ai']['aws']],
-            "Referans": [ref_at, r['ref']['cu'], r['ref']['asw'], r['ref']['aws']]
+            "AI Metni": [ai_data.get("at"), ai_data.get("cu"), ai_data.get("asw"), ai_data.get("aws")],
+            "Referans": [ref_data.get("at"), ref_data.get("cu"), ref_data.get("asw"), ref_data.get("aws")]
         })
-        st.info(f"**💡 Okunabilirlik Yorumu:** {r['comment']}")
+        st.info(f"**💡 Okunabilirlik Yorumu:** {r.get('comment', '')}")
     else:
         st.info("Okunabilirlik analizi bekleniyor...")
