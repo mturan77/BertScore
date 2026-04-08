@@ -22,13 +22,44 @@ def calculate_readability(text):
     sentences = [s for s in re.split(r'[.!?]+', text) if s.strip()]
     words = re.findall(r'\b\w+\b', text, re.UNICODE)
     if not words or not sentences: return None
+    
     total_words, total_sentences = len(words), len(sentences)
-    total_syllables = sum(len(re.findall(r'[aeıioöuüAEIİOÖUÜ]', w)) for w in words)
+    
+    # Hece sayımları ve Bezirci-Yılmaz için değişkenler
+    total_syllables = 0
+    h3, h4, h5, h6 = 0, 0, 0, 0
+    
+    for w in words:
+        syl_count = len(re.findall(r'[aeıioöuüAEIİOÖUÜ]', w))
+        total_syllables += syl_count
+        # Bezirci-Yılmaz hece gruplandırması
+        if syl_count == 3: h3 += 1
+        elif syl_count == 4: h4 += 1
+        elif syl_count == 5: h5 += 1
+        elif syl_count >= 6: h6 += 1
+
     avg_w_syl = total_syllables / total_words
     avg_s_word = total_words / total_sentences
+    
+    # Bezirci-Yılmaz Formülü Hesaplaması
+    oks = avg_s_word
+    avg_h3 = h3 / total_sentences
+    avg_h4 = h4 / total_sentences
+    avg_h5 = h5 / total_sentences
+    avg_h6 = h6 / total_sentences
+    
+    bezirci_yilmaz = (oks ** 0.5) * ((avg_h3 * 0.84) + (avg_h4 * 1.5) + (avg_h5 * 3.5) + (avg_h6 * 26.35))
+    
     atesman = 199 - (1.015 * avg_s_word) - (42.332 * avg_w_syl)
     cetinkaya = 118.8 - (25.9 * avg_w_syl) - (0.9 * avg_s_word)
-    return {"at": round(atesman, 2), "cu": round(cetinkaya, 2), "asw": round(avg_s_word, 2), "aws": round(avg_w_syl, 2)}
+    
+    return {
+        "at": round(atesman, 2), 
+        "cu": round(cetinkaya, 2), 
+        "by": round(bezirci_yilmaz, 2), # Yeni değer eklendi
+        "asw": round(avg_s_word, 2), 
+        "aws": round(avg_w_syl, 2)
+    }
 
 def get_atesman_info(score):
     if score is None: return "Veri Yok", "❓"
@@ -44,6 +75,14 @@ def get_cetinkaya_info(score):
     if score >= 60: return "Orta eğitim düzeyi", "📘"
     if score >= 40: return "Yüksek eğitim düzeyi", "📙"
     return "Akademik/Uzman düzey", "📕"
+
+# Yeni: Bezirci-Yılmaz Bilgi Fonksiyonu
+def get_bezirci_yilmaz_info(score):
+    if score is None: return "Veri Yok", "❓"
+    if score < 9: return "İlköğretim", "🟢"
+    if score < 13: return "Lise", "🟡"
+    if score <= 16: return "Lisans", "🟠"
+    return "Akademik", "🔴"
 
 # --- ARAYÜZ ---
 st.title("🇹🇷 Gelişmiş Türkçe Metin Analiz Dashboard")
@@ -128,11 +167,19 @@ with res_right:
         m3.metric("AI Çetinkaya", f"{ai_d.get('cu')}", f"{cl_ai} {ci_ai}", delta_color="off")
         m4.metric("Ref Çetinkaya", f"{ref_d.get('cu')}", f"{cl_ref} {ci_ref}", delta_color="off")
 
-        # Tablo ve Yorum
+        # Yeni: Bezirci-Yılmaz Bölümü
+        st.markdown("**Bezirci-Yılmaz (Eğitim Seviyesi)**")
+        m5, m6 = st.columns(2)
+        by_l_ai, by_i_ai = get_bezirci_yilmaz_info(ai_d.get("by"))
+        by_l_ref, by_i_ref = get_bezirci_yilmaz_info(ref_d.get("by"))
+        m5.metric("AI Bezirci-Yılmaz", f"{ai_d.get('by')}", f"{by_l_ai} {by_i_ai}", delta_color="off")
+        m6.metric("Ref Bezirci-Yılmaz", f"{ref_d.get('by')}", f"{by_l_ref} {by_i_ref}", delta_color="off")
+
+        # Tablo ve Yorum (Tabloya Bezirci-Yılmaz eklendi)
         st.table({
-            "Ölçüt": ["Ateşman Puanı", "Çetinkaya-Uzun", "Ort. Kelime Sayısı", "Ort. Hece Sayısı"],
-            "AI Metni": [ai_d.get("at"), ai_d.get("cu"), ai_d.get("asw"), ai_d.get("aws")],
-            "Referans": [ref_d.get("at"), ref_d.get("cu"), ref_d.get("asw"), ref_d.get("aws")]
+            "Ölçüt": ["Ateşman Puanı", "Çetinkaya-Uzun", "Bezirci-Yılmaz", "Ort. Kelime Sayısı", "Ort. Hece Sayısı"],
+            "AI Metni": [ai_d.get("at"), ai_d.get("cu"), ai_d.get("by"), ai_d.get("asw"), ai_d.get("aws")],
+            "Referans": [ref_d.get("at"), ref_d.get("cu"), ref_d.get("by"), ref_d.get("asw"), ref_d.get("aws")]
         })
         st.info(f"**💡 Okunabilirlik Yorumu:** {r.get('comment')}")
     else:
