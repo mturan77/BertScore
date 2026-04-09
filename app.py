@@ -192,6 +192,7 @@ if c_btn1.button("🚀 NLP Analizi"):
             
             # Cachelenmiş modelleri çağırıyoruz
             scorer = get_bert_scorer()
+            st.info(f"🤖 Arka Planda Çalışan NLP Modeli: {scorer.model_type}")
             P, R, F1 = scorer.score([ai_text], [ref_text])
             f1_val = F1.mean().item()
             
