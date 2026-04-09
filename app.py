@@ -72,7 +72,6 @@ def get_bezirci_yilmaz_info(score):
     if score <= 16: return "Lisans", "🟠"
     return "Akademik", "🔴"
 
-# --- ARAYÜZ YARDIMCI FONKSİYON ---
 def render_exam_solution(data, title):
     # Üst Metrik Kartları
     m1, m2, m3 = st.columns(3)
@@ -151,10 +150,31 @@ ref_text = col_in2.text_area("Referans Metin (Cevap Anahtarı):", value="Günüm
 
 c_btn1, c_btn2, c_btn3 = st.columns([1, 1, 4])
 
+# --- NLP ANALİZİ (GERİ GELDİ) ---
 if c_btn1.button("🚀 NLP Analizi"):
-    # (NLP kodları aynı kalıyor, uzatmamak için burayı okunabilirlik odaklı bıraktım, sen kendi NLP bloğunu koruyabilirsin)
-    pass
+    if ai_text and ref_text:
+        with st.spinner("NLP Metrikleri Hesaplanıyor..."):
+            ai_words = re.findall(r'\b\w+\b', ai_text, re.UNICODE)
+            ref_words = re.findall(r'\b\w+\b', ref_text, re.UNICODE)
+            ai_sentences = [s for s in re.split(r'[.!?]+', ai_text) if s.strip()]
+            ref_sentences = [s for s in re.split(r'[.!?]+', ref_text) if s.strip()]
+            
+            ai_spell_issues = check_turkish_spelling(ai_words)
+            P, R, F1 = score([ai_text], [ref_text], lang="tr", verbose=False)
+            model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+            cos_sim = cosine_similarity([model.encode(ai_text)], [model.encode(ref_text)])[0][0]
+            f1_val = F1.mean().item()
+            
+            raw_report = f"--- TEMEL ÖZELLİKLER ---\n[AI] Kelime: {len(ai_words)} | Cümle: {len(ai_sentences)}\n"
+            raw_report += f"[Ref] Kelime: {len(ref_words)} | Cümle: {len(ref_sentences)}\n\n"
+            raw_report += "--- İMLA KONTROLÜ (AI) ---\n"
+            raw_report += (", ".join(ai_spell_issues) + "\n\n") if ai_spell_issues else "Sorun yok.\n\n"
+            raw_report += f"--- TEKNİK METRİKLER ---\nPrecision : {P.mean().item():.4f}\nRecall    : {R.mean().item():.4f}\nF1-Score  : {f1_val:.4f}\nCosine    : {cos_sim:.4f}"
+            
+            comment = "Anlamsal uyum mükemmel, metinler birbirine çok yakın." if f1_val > 0.88 else "Anlamsal olarak metinler arasında belirgin farklar mevcut."
+            st.session_state.nlp_res = {"raw": raw_report, "f1": f1_val, "cos": cos_sim, "comment": comment}
 
+# --- OKUNABİLİRLİK ANALİZİ ---
 if c_btn2.button("📊 Okunabilirlik Analizi"):
     if ai_text and ref_text:
         st.session_state.read_res = {
@@ -168,11 +188,28 @@ if c_btn3.button("🗑️ Temizle"):
 
 st.divider()
 
+# --- SONUÇLARIN GÖSTERİMİ ---
+
+# 1. NLP Analiz Sonuçları
+if st.session_state.nlp_res:
+    st.header("🛠️ NLP Analiz Raporu")
+    n = st.session_state.nlp_res
+    
+    n_col1, n_col2 = st.columns([1, 2])
+    with n_col1:
+        st.metric("F1-Score (Başarı)", f"{n.get('f1'):.2%}")
+        st.metric("Anlam Benzerliği (Cosine)", f"{n.get('cos'):.2%}")
+    with n_col2:
+        st.code(n.get('raw'), language="text")
+        
+    st.success(f"**💡 NLP Analist Yorumu:** {n.get('comment')}")
+    st.divider()
+
+# 2. Okunabilirlik Analiz Sonuçları
 if st.session_state.read_res:
     r = st.session_state.read_res
     st.header("📈 Okunabilirlik ve Adım Adım Çözüm")
     
-    # --- AI VE REFERANS AYRIMI BURADA BAŞLIYOR ---
     main_tab_ai, main_tab_ref = st.tabs(["🤖 AI Metni Analizi", "📝 Referans Metin Analizi"])
     
     with main_tab_ai:
