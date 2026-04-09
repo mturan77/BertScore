@@ -208,4 +208,4 @@ if c_btn1.button("🚀 NLP Analizi"):
             raw_report += f"[Ref] Kelime: {len(ref_words)} | Cümle: {len(ref_sentences)}\n\n"
             raw_report += "--- İMLA KONTROLÜ (AI) ---\n"
             raw_report += (", ".join(ai_spell_issues) + "\n\n") if ai_spell_issues else "Sorun yok.\n\n"
-            raw_report += f"--- TEKNİK METRİKLER ---\nPrecision : {P.mean().item():.4f}\nRecall    : {R.mean().item():.4f}\nF1-
+            raw_report += f"--- TEKNİK METRİKLER ---\nPrecision : {P.mean().item():.4f}\nRecall    : {R.mean().item():.4f}\nF1-Score  : {f1_val:.4f}\nCosine    : {cos_sim:.4f}"
