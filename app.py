@@ -15,11 +15,8 @@ if 'read_res' not in st.session_state: st.session_state.read_res = None
 # --- NLP MODEL CACHE FONKSİYONLARI ---
 @st.cache_resource
 def get_bert_scorer():
-    """
-    BERT modelinin butona her basıldığında yeniden yüklenmesini önlemek
-    ve bellek sızıntılarını engellemek için model önbelleğe (cache) alınır.
-    """
-    return BERTScorer(lang="tr", rescale_with_baseline=True)
+    # rescale_with_baseline=False yapıldı çünkü Türkçe (lang="tr") için baseline dosyası yok.
+    return BERTScorer(lang="tr", rescale_with_baseline=False)
 
 @st.cache_resource
 def get_sentence_transformer():
@@ -33,7 +30,6 @@ def check_turkish_spelling(words):
 def calculate_readability(text):
     sentences = [s for s in re.split(r'[.!?]+', text) if s.strip()]
     
-    # Rakamların okunabilirlik OHS metriklerini asimetrik düşürmesini engellemek için filtreleme.
     words_raw = re.findall(r'\b\w+\b', text, re.UNICODE)
     words = [w for w in words_raw if any(c.isalpha() for c in w)]
     
@@ -47,7 +43,6 @@ def calculate_readability(text):
     
     for w in words:
         syl_count = len(re.findall(r'[aeıioöuüAEIİOÖUÜ]', w))
-        
         if syl_count == 0:
             syl_count = 1 
             
@@ -66,13 +61,13 @@ def calculate_readability(text):
     avg_h5 = h5 / total_sentences
     avg_h6 = h6 / total_sentences
     
-    # 1. Ateşman Formülü (Literatür Uyumlu)
+    # 1. Ateşman Formülü
     atesman = 198.825 - (40.175 * ohs) - (2.610 * oks)
     
-    # 2. Çetinkaya-Uzun Formülü (Literatür Uyumlu)
+    # 2. Çetinkaya-Uzun Formülü
     cetinkaya = 118.823 - (25.987 * ohs) - (0.971 * oks)
     
-    # 3. Bezirci-Yılmaz Formülü (Literatür Uyumlu - KAREKÖK EKLENDİ)
+    # 3. Bezirci-Yılmaz Formülü (Karekök eklendi)
     bezirci_yilmaz = (oks ** 0.5) * ((avg_h3 * 0.84) + (avg_h4 * 1.5) + (avg_h5 * 3.5) + (avg_h6 * 26.25))
     
     return {
@@ -109,7 +104,6 @@ def get_bezirci_yilmaz_info(score):
     return "Akademik", "🔴"                      
 
 def render_exam_solution(data, title):
-    # Üst Metrik Kartları
     m1, m2, m3 = st.columns(3)
     with m1:
         score = data['scores']['at']
@@ -209,3 +203,59 @@ if c_btn1.button("🚀 NLP Analizi"):
             raw_report += "--- İMLA KONTROLÜ (AI) ---\n"
             raw_report += (", ".join(ai_spell_issues) + "\n\n") if ai_spell_issues else "Sorun yok.\n\n"
             raw_report += f"--- TEKNİK METRİKLER ---\nPrecision : {P.mean().item():.4f}\nRecall    : {R.mean().item():.4f}\nF1-Score  : {f1_val:.4f}\nCosine    : {cos_sim:.4f}"
+            
+            # Yorum eşiği eski haline (0.88) döndürüldü
+            comment = "Anlamsal uyum mükemmel, metinler birbirine çok yakın." if f1_val > 0.88 else "Anlamsal olarak metinler arasında belirgin farklar mevcut."
+            st.session_state.nlp_res = {"raw": raw_report, "f1": f1_val, "cos": cos_sim, "comment": comment}
+
+# --- OKUNABİLİRLİK ANALİZİ ---
+if c_btn2.button("📊 Okunabilirlik Analizi"):
+    if ai_text and ref_text:
+        st.session_state.read_res = {
+            "ai": calculate_readability(ai_text), 
+            "ref": calculate_readability(ref_text)
+        }
+
+if c_btn3.button("🗑️ Temizle"):
+    st.session_state.nlp_res = st.session_state.read_res = None
+    st.rerun()
+
+st.divider()
+
+# --- SONUÇLARIN GÖSTERİMİ ---
+
+# 1. NLP Analiz Sonuçları
+if st.session_state.nlp_res:
+    st.header("🛠️ NLP Analiz Raporu")
+    n = st.session_state.nlp_res
+    
+    n_col1, n_col2 = st.columns([1, 2])
+    with n_col1:
+        st.metric("F1-Score (Başarı)", f"{n.get('f1'):.2%}")
+        st.metric("Anlam Benzerliği (Cosine)", f"{n.get('cos'):.2%}")
+    with n_col2:
+        st.code(n.get('raw'), language="text")
+        
+    st.success(f"**💡 NLP Analist Yorumu:** {n.get('comment')}")
+    st.divider()
+
+# 2. Okunabilirlik Analiz Sonuçları
+if st.session_state.read_res:
+    r = st.session_state.read_res
+    st.header("📈 Okunabilirlik ve Adım Adım Çözüm")
+    
+    main_tab_ai, main_tab_ref = st.tabs(["🤖 AI Metni Analizi", "📝 Referans Metin Analizi"])
+    
+    with main_tab_ai:
+        render_exam_solution(r['ai'], "AI")
+        
+    with main_tab_ref:
+        render_exam_solution(r['ref'], "Ref")
+
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.subheader("📊 Karşılaştırmalı Özet Tablo")
+    st.table({
+        "Metrik": ["Ateşman Puanı", "Çetinkaya-Uzun Puanı", "Bezirci-Yılmaz Puanı", "Ort. Kelime (OKS)", "Ort. Hece (OHS)"],
+        "AI Metni": [r['ai']['scores']['at'], r['ai']['scores']['cu'], r['ai']['scores']['by'], r['ai']['averages']['oks'], r['ai']['averages']['ohs']],
+        "Referans": [r['ref']['scores']['at'], r['ref']['scores']['cu'], r['ref']['scores']['by'], r['ref']['averages']['oks'], r['ref']['averages']['ohs']]
+    })
