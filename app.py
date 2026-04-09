@@ -12,10 +12,13 @@ st.set_page_config(page_title="Türkçe Metin Analiz Dashboard", layout="wide")
 if 'nlp_res' not in st.session_state: st.session_state.nlp_res = None
 if 'read_res' not in st.session_state: st.session_state.read_res = None
 
-# --- NLP MODEL CACHE FONKSİYONU ---
+# --- NLP MODEL CACHE FONKSİYONLARI ---
 @st.cache_resource
 def get_bert_scorer():
-    # Modelin her seferinde yeniden yüklenmesini önlemek için cache kullanıyoruz.
+    """
+    BERT modelinin butona her basıldığında yeniden yüklenmesini önlemek
+    ve bellek sızıntılarını engellemek için model önbelleğe (cache) alınır.
+    """
     return BERTScorer(lang="tr", rescale_with_baseline=True)
 
 @st.cache_resource
@@ -23,7 +26,6 @@ def get_sentence_transformer():
     return SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
 # --- FONKSİYONLAR ---
-
 def check_turkish_spelling(words):
     kalin, ince = set("aıou"), set("eiöü")
     return [w for w in words if any(c in kalin for c in w.lower()) and any(c in ince for c in w.lower())]
@@ -31,7 +33,7 @@ def check_turkish_spelling(words):
 def calculate_readability(text):
     sentences = [s for s in re.split(r'[.!?]+', text) if s.strip()]
     
-    # Rakamların okunabilirlik OHS metriklerini asimetrik düşürmesini engellemek için
+    # Rakamların okunabilirlik OHS metriklerini asimetrik düşürmesini engellemek için filtreleme.
     words_raw = re.findall(r'\b\w+\b', text, re.UNICODE)
     words = [w for w in words_raw if any(c.isalpha() for c in w)]
     
@@ -45,6 +47,7 @@ def calculate_readability(text):
     
     for w in words:
         syl_count = len(re.findall(r'[aeıioöuüAEIİOÖUÜ]', w))
+        
         if syl_count == 0:
             syl_count = 1 
             
@@ -63,19 +66,25 @@ def calculate_readability(text):
     avg_h5 = h5 / total_sentences
     avg_h6 = h6 / total_sentences
     
-    # 1. Ateşman Formülü (Orijinal Literatür)
+    # 1. Ateşman Formülü (Literatür Uyumlu)
     atesman = 198.825 - (40.175 * ohs) - (2.610 * oks)
     
-    # 2. Çetinkaya-Uzun Formülü (Orijinal Literatür)
+    # 2. Çetinkaya-Uzun Formülü (Literatür Uyumlu)
     cetinkaya = 118.823 - (25.987 * ohs) - (0.971 * oks)
     
-    # 3. Bezirci-Yılmaz Formülü (Orijinal Literatür - Kareköksüz)
-    bezirci_yilmaz = oks * ((avg_h3 * 0.84) + (avg_h4 * 1.5) + (avg_h5 * 3.5) + (avg_h6 * 26.25))
+    # 3. Bezirci-Yılmaz Formülü (Literatür Uyumlu - KAREKÖK EKLENDİ)
+    bezirci_yilmaz = (oks ** 0.5) * ((avg_h3 * 0.84) + (avg_h4 * 1.5) + (avg_h5 * 3.5) + (avg_h6 * 26.25))
     
     return {
         "raw": {"kelime": total_words, "cumle": total_sentences, "hece": total_syllables},
-        "averages": {"oks": round(oks, 3), "ohs": round(ohs, 3), "h3": round(avg_h3, 3), "h4": round(avg_h4, 3), "h5": round(avg_h5, 3), "h6": round(avg_h6, 3)},
-        "scores": {"at": round(atesman, 2), "cu": round(cetinkaya, 2), "by": round(bezirci_yilmaz, 2)}
+        "averages": {
+            "oks": round(oks, 3), "ohs": round(ohs, 3), 
+            "h3": round(avg_h3, 3), "h4": round(avg_h4, 3), 
+            "h5": round(avg_h5, 3), "h6": round(avg_h6, 3)
+        },
+        "scores": {
+            "at": round(atesman, 2), "cu": round(cetinkaya, 2), "by": round(bezirci_yilmaz, 2)
+        }
     }
 
 def get_atesman_info(score):
@@ -94,7 +103,7 @@ def get_cetinkaya_info(score):
     return "Çok Zor (Akademik)", "🎓"
 
 def get_bezirci_yilmaz_info(score):
-    if score <= 8: return "İlköğretim", "🟢"      
+    if score <= 8: return "İlköğretim", "🟢"     
     if score <= 12: return "Lise", "🟡"          
     if score <= 16: return "Lisans", "🟠"        
     return "Akademik", "🔴"                      
@@ -154,15 +163,16 @@ def render_exam_solution(data, title):
         st.markdown("**1. Verilenler**")
         st.code(f"OKS = {oks}\nH3 (3 Heceli Ort) = {h3}\nH4 (4 Heceli Ort) = {h4}\nH5 (5 Heceli Ort) = {h5}\nH6+ (6+ Heceli Ort) = {h6}", language="text")
         st.markdown("**2. Formül**")
-        st.latex(r"OKS \times [(H_3 \times 0.84) + (H_4 \times 1.5) + (H_5 \times 3.5) + (H_6 \times 26.25)]")
+        st.latex(r"\sqrt{OKS} \times [(H_3 \times 0.84) + (H_4 \times 1.5) + (H_5 \times 3.5) + (H_6 \times 26.25)]")
         st.markdown("**3. Yerine Koyma**")
-        st.latex(rf"{oks} \times [({h3} \times 0.84) + ({h4} \times 1.5) + ({h5} \times 3.5) + ({h6} \times 26.25)]")
-        st.markdown("**4. Parantez İçi Çarpmalar**")
+        st.latex(rf"\sqrt{{{oks}}} \times [({h3} \times 0.84) + ({h4} \times 1.5) + ({h5} \times 3.5) + ({h6} \times 26.25)]")
+        st.markdown("**4. Karekök ve Parantez İçi Çarpmalar**")
+        kok = round(oks**0.5, 3)
         c3, c4, c5, c6 = round(h3*0.84, 3), round(h4*1.5, 3), round(h5*3.5, 3), round(h6*26.25, 3)
-        st.latex(rf"{oks} \times [{c3} + {c4} + {c5} + {c6}]")
+        st.latex(rf"{kok} \times [{c3} + {c4} + {c5} + {c6}]")
         st.markdown("**5. Toplam ve Son Çarpım**")
         toplam = round(c3 + c4 + c5 + c6, 3)
-        st.latex(rf"{oks} \times {toplam}")
+        st.latex(rf"{kok} \times {toplam}")
         st.markdown("**6. Sonuç**")
         st.success(f"Skor: {data['scores']['by']}  |  Yorum: {get_bezirci_yilmaz_info(data['scores']['by'])[0]}")
 
@@ -178,7 +188,7 @@ c_btn1, c_btn2, c_btn3 = st.columns([1, 1, 4])
 # --- NLP ANALİZİ ---
 if c_btn1.button("🚀 NLP Analizi"):
     if ai_text and ref_text:
-        with st.spinner("NLP Metrikleri Hesaplanıyor... (BERT yüklenmesi ilk seferde birkaç saniye sürebilir)"):
+        with st.spinner("NLP Metrikleri Hesaplanıyor... (Modellerin ilk yüklenmesi biraz sürebilir)"):
             ai_words = re.findall(r'\b\w+\b', ai_text, re.UNICODE)
             ref_words = re.findall(r'\b\w+\b', ref_text, re.UNICODE)
             ai_sentences = [s for s in re.split(r'[.!?]+', ai_text) if s.strip()]
@@ -186,74 +196,16 @@ if c_btn1.button("🚀 NLP Analizi"):
             
             ai_spell_issues = check_turkish_spelling(ai_words)
             
-            # BERTScorer kullanımı
+            # Cachelenmiş modelleri çağırıyoruz
             scorer = get_bert_scorer()
             P, R, F1 = scorer.score([ai_text], [ref_text])
             f1_val = F1.mean().item()
             
-            # Cosine Similarity kullanımı
-            st_model = get_sentence_transformer()
-            cos_sim = cosine_similarity([st_model.encode(ai_text)], [st_model.encode(ref_text)])[0][0]
+            model = get_sentence_transformer()
+            cos_sim = cosine_similarity([model.encode(ai_text)], [model.encode(ref_text)])[0][0]
             
             raw_report = f"--- TEMEL ÖZELLİKLER ---\n[AI] Kelime: {len(ai_words)} | Cümle: {len(ai_sentences)}\n"
             raw_report += f"[Ref] Kelime: {len(ref_words)} | Cümle: {len(ref_sentences)}\n\n"
             raw_report += "--- İMLA KONTROLÜ (AI) ---\n"
             raw_report += (", ".join(ai_spell_issues) + "\n\n") if ai_spell_issues else "Sorun yok.\n\n"
-            raw_report += f"--- TEKNİK METRİKLER ---\nPrecision : {P.mean().item():.4f}\nRecall    : {R.mean().item():.4f}\nF1-Score  : {f1_val:.4f}\nCosine    : {cos_sim:.4f}"
-            
-            # Rescale edilmiş BERT skoru için eşik (Örn: 0.50)
-            comment = "Anlamsal uyum çok başarılı, metinler birbirine oldukça yakın." if f1_val > 0.50 else "Anlamsal olarak metinler arasında belirgin farklar mevcut."
-            st.session_state.nlp_res = {"raw": raw_report, "f1": f1_val, "cos": cos_sim, "comment": comment}
-
-# --- OKUNABİLİRLİK ANALİZİ ---
-if c_btn2.button("📊 Okunabilirlik Analizi"):
-    if ai_text and ref_text:
-        st.session_state.read_res = {
-            "ai": calculate_readability(ai_text), 
-            "ref": calculate_readability(ref_text)
-        }
-
-if c_btn3.button("🗑️ Temizle"):
-    st.session_state.nlp_res = st.session_state.read_res = None
-    st.rerun()
-
-st.divider()
-
-# --- SONUÇLARIN GÖSTERİMİ ---
-
-# 1. NLP Analiz Sonuçları
-if st.session_state.nlp_res:
-    st.header("🛠️ NLP Analiz Raporu")
-    n = st.session_state.nlp_res
-    
-    n_col1, n_col2 = st.columns([1, 2])
-    with n_col1:
-        st.metric("F1-Score (Başarı)", f"{n.get('f1'):.2%}")
-        st.metric("Anlam Benzerliği (Cosine)", f"{n.get('cos'):.2%}")
-    with n_col2:
-        st.code(n.get('raw'), language="text")
-        
-    st.success(f"**💡 NLP Analist Yorumu:** {n.get('comment')}")
-    st.divider()
-
-# 2. Okunabilirlik Analiz Sonuçları
-if st.session_state.read_res:
-    r = st.session_state.read_res
-    st.header("📈 Okunabilirlik ve Adım Adım Çözüm")
-    
-    main_tab_ai, main_tab_ref = st.tabs(["🤖 AI Metni Analizi", "📝 Referans Metin Analizi"])
-    
-    with main_tab_ai:
-        render_exam_solution(r['ai'], "AI")
-        
-    with main_tab_ref:
-        render_exam_solution(r['ref'], "Ref")
-
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    st.subheader("📊 Karşılaştırmalı Özet Tablo")
-    
-    st.table({
-        "Metrik": ["Ateşman Puanı", "Çetinkaya-Uzun Puanı", "Bezirci-Yılmaz Puanı", "Ort. Kelime (OKS)", "Ort. Hece (OHS)"],
-        "AI Metni": [r['ai']['scores']['at'], r['ai']['scores']['cu'], r['ai']['scores']['by'], r['ai']['averages']['oks'], r['ai']['averages']['ohs']],
-        "Referans": [r['ref']['scores']['at'], r['ref']['scores']['cu'], r['ref']['scores']['by'], r['ref']['averages']['oks'], r['ref']['averages']['ohs']]
-    })
+            raw_report += f"--- TEKNİK METRİKLER ---\nPrecision : {P.mean().item():.4f}\nRecall    : {R.mean().item():.4f}\nF1-
